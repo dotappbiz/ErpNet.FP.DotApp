@@ -35,6 +35,87 @@
             return Request(CommandOpenFiscalReceipt, header);
         }
 
+        public override (string, DeviceStatus) OpenReceipt(ErpNet.FP.Core.Receipt receipt)
+        {
+            var opt = receipt.ReceiptOptions;
+
+            // ако не е invoice – запази текущото поведение
+            if (opt == null || !opt.IsInvoice)
+                return base.OpenReceipt(receipt);
+
+            // invoice mode: Op,Pwd,Till,"I",UNP
+            var op = string.IsNullOrEmpty(receipt.Operator)
+                ? Options.ValueOrDefault("Operator.ID", "1")
+                : receipt.Operator;
+
+            var pwd = string.IsNullOrEmpty(receipt.Operator)
+                ? Options.ValueOrDefault("Operator.Password", "0000").WithMaxLength(Info.OperatorPasswordMaxLength)
+                : receipt.OperatorPassword;
+
+            var till = string.IsNullOrWhiteSpace(opt.TillNumber) ? "1" : opt.TillNumber!;
+            var unp = string.IsNullOrWhiteSpace(opt.UNP) ? receipt.UniqueSaleNumber : opt.UNP!;
+
+            var header = string.Join(",",
+                new string[]
+                {
+                    op,
+                    pwd,
+                    till,
+                    "I",
+                    unp
+                });
+
+            return Request(CommandOpenFiscalReceipt, header);
+        }
+
+        public override (string, DeviceStatus) PrintCustomerInformation(ErpNet.FP.Core.ClientInfo info)
+        {
+            string Safe(string? s) => string.IsNullOrEmpty(s) ? " " : s;
+            string Cut(string s, int max) => s.Length <= max ? s : s.Substring(0, max);
+
+            // По протокол: [#|*|^]<Bulstat> + TAB + Seller + TAB + Receiver + TAB + Client + TAB + TaxNo + TAB + Address + TAB + AccPer
+            // Всичко след първия параметър е optional, но ако подадеш по-късен, трябва да подадеш всички преди него.
+
+            var eikType = string.IsNullOrWhiteSpace(info.EIKType) ? "^" : info.EIKType!;
+            eikType = Cut(eikType, 1);
+
+            // Bulstat: 9..14 символа. Ако идва "BG..." – махаме BG, за да сме като NAV логиката.
+            var bulstat = string.IsNullOrWhiteSpace(info.EIK) ? "999999999" : info.EIK!.Trim();
+            if (bulstat.StartsWith("BG", StringComparison.OrdinalIgnoreCase))
+                bulstat = bulstat.Substring(2);
+
+            bulstat = Cut(bulstat, 14);
+
+            // Адрес по протокол = един параметър; 2-ри ред се разделя с LF (0x0A)
+            var addr1 = Cut(Safe(info.Address1), 28);
+            var addr2 = Cut(Safe(info.Address2), 34);
+            var address = addr2.Trim() == "" || addr2.Trim() == "-" ? addr1 : (addr1 + "\n" + addr2); // \n = LF
+
+            // Ако нямаме VAT/адрес, не ги подаваме изобщо (за да не нарушим “optional but sequential” правилото)
+            var hasVat = !string.IsNullOrWhiteSpace(info.TaxNo);
+
+            var seller = Cut(Safe(info.SellerName), 26);
+            var receiver = Cut(Safe(info.ReceiverName), 26);
+            var client = Cut(Safe(info.ClientName), 46); // протоколът позволява 2 реда; тук държим simple
+
+            // Важно: НЯМА водещ TAB. Първо е EIKType+Bulstat.
+            var sb = new System.Text.StringBuilder()
+                .Append(eikType).Append(bulstat)
+                .Append('\t').Append(seller)
+                .Append('\t').Append(receiver)
+                .Append('\t').Append(client);
+
+            if (hasVat)
+            {
+                var taxNo = Cut(Safe(info.TaxNo), 14);
+                sb.Append('\t').Append(taxNo)
+                .Append('\t').Append(address);
+                // AccPer е optional – ако ви трябва, ще го добавим като 7-ми параметър
+            }
+
+            return Request(CommandPrintCustomerInformation, sb.ToString());
+        }
+
         public override (string, DeviceStatus) AddItem(
             int department,
             string itemText,

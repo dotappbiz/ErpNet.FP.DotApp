@@ -196,6 +196,17 @@
                 }
             }
 
+            // Invoice customer information (must be after payment)
+            if (receipt.ReceiptOptions?.IsInvoice == true && receipt.ClientInfo != null)
+            {
+                var (_, st) = PrintCustomerInformation(receipt.ClientInfo);
+                if (!st.Ok)
+                {
+                    st.AddInfo("Error occurred while printing customer information (invoice).");
+                    return (receiptInfo, st);
+                }
+            }
+
             itemNumber = 0;
             if (receipt.Items != null) foreach (var item in receipt.Items)
                 {
@@ -310,11 +321,13 @@
             AbortReceipt();
 
             // Opening receipt
-            var (_, deviceStatus) = OpenReceipt(
-                receipt.UniqueSaleNumber,
-                receipt.Operator,
-                receipt.OperatorPassword
-            );
+            // var (_, deviceStatus) = OpenReceipt(
+            //     receipt.UniqueSaleNumber,
+            //     receipt.Operator,
+            //     receipt.OperatorPassword
+            // );
+            var (_, deviceStatus) = OpenReceipt(receipt);
+
             if (!deviceStatus.Ok)
             {
                 AbortReceipt();

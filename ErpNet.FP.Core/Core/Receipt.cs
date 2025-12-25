@@ -14,6 +14,11 @@
         //[JsonProperty(Required = Required.Always)]
         public string UniqueSaleNumber { get; set; } = string.Empty;
 
+        public ReceiptOptions? ReceiptOptions { get; set; }
+
+        public ClientInfo? ClientInfo { get; set; }
+
+
         /// <summary>
         /// The line items of the receipt.
         /// </summary>

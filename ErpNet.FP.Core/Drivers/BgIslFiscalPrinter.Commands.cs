@@ -38,6 +38,55 @@
         // Pinpad commands – option ‘6’ - Report from pinpad
         protected const string DatecsXPinpadReportFromPinpad = "6\t";
 
+        protected const byte CommandPrintCustomerInformation = 0x39; // 57 dec
+
+        public virtual (string, DeviceStatus) PrintCustomerInformation(ErpNet.FP.Core.ClientInfo info)
+        {
+            string Safe(string? s) => string.IsNullOrEmpty(s) ? " " : s;
+            string Cut(string s, int max) => s.Length <= max ? s : s.Substring(0, max);
+
+            var hasVat = !string.IsNullOrWhiteSpace(info.TaxNo);
+
+            // NAV логиката: _04 ако няма VAT, _07 ако има VAT
+            // Тук подаваме под-команда като "4" / "7" (ако принтерът ви иска "04"/"07", ще го коригираме след тест)
+            var subCode = hasVat ? "7" : "4";
+
+            var eikType = Cut(CopyOrDefault(info.EIKType, "^"), 1);
+            var eik = Cut(CopyOrDefault(info.EIK, "999999999"), 14);
+
+            var seller = Cut(Safe(info.SellerName), 26);
+            var receiver = Cut(Safe(info.ReceiverName), 26);
+            var client = Cut(Safe(info.ClientName), 26);
+
+            var sb = new System.Text.StringBuilder()
+                .Append('\t').Append(subCode)
+                .Append('\t').Append(eikType)
+                .Append('\t').Append(eik)
+                .Append('\t').Append(seller)
+                .Append('\t').Append(receiver)
+                .Append('\t').Append(client);
+
+            if (hasVat)
+            {
+                var taxNo = Cut(Safe(info.TaxNo), 14);
+                var addr1 = Cut(Safe(info.Address1), 28);
+                var addr2 = Cut(Safe(info.Address2), 28);
+
+                sb.Append('\t').Append(taxNo)
+                .Append('\t').Append(addr1)
+                .Append('\t').Append(addr2);
+            }
+
+            return Request(CommandPrintCustomerInformation, sb.ToString());
+
+            static string CopyOrDefault(string? value, string def) => string.IsNullOrWhiteSpace(value) ? def : value!;
+        }
+
+        public virtual (string, DeviceStatus) OpenReceipt(ErpNet.FP.Core.Receipt receipt)
+        {
+            return OpenReceipt(receipt.UniqueSaleNumber, receipt.Operator, receipt.OperatorPassword);
+        }
+
         public override string GetReversalReasonText(ReversalReason reversalReason)
         {
             return reversalReason switch
