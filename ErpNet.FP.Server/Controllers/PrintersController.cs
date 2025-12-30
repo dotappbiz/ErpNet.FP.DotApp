@@ -247,6 +247,39 @@
             return NotFound();
         }
 
+        // GET {id}/invoicerange
+        [HttpGet("{id}/invoicerange")]
+        public async Task<IActionResult> InvoiceRange(
+            string id,
+            [FromQuery] string? taskId,
+            [FromQuery] string? timeout,
+            [FromQuery] int asyncTimeout = PrintJob.DefaultTimeout)
+        {
+            if (!context.IsReady)
+            {
+                return StatusCode(StatusCodes.Status405MethodNotAllowed);
+            }
+
+            if (context.Printers.TryGetValue(id, out IFiscalPrinter? printer))
+            {
+                var result = await context.RunAsync(
+                    new PrintJob
+                    {
+                        Printer = printer,
+                        Action = PrintJobAction.InvoiceRange,   // <-- нова стойност
+                        Document = null,
+                        AsyncTimeout = asyncTimeout,
+                        Timeout = timeout == null ? 0 : timeout.ParseTimeout(),
+                        TaskId = taskId
+                    });
+
+                return Ok(result);
+            }
+
+            return NotFound();
+        }
+
+
         // POST {id}/datetime
         [HttpPost("{id}/datetime")]
         public async Task<IActionResult> SetDateTime(

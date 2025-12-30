@@ -99,6 +99,12 @@ namespace ErpNet.FP.Core
         /// </summary>
         DeviceStatusWithDateTime Reset(Credentials credentials);
 
+        /// <summary>
+        /// Gets the invoice number range and current value from the device (Start/End/Current).
+        /// </summary>
+        DeviceStatusWithInvoiceRange GetInvoiceRange();
+
         void SetDeadLine(DateTime deadLine);
+        
     }
 }

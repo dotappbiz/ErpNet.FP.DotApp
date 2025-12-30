@@ -152,4 +152,18 @@
         }
     }
 
+    public class DeviceStatusWithInvoiceRange : DeviceStatus
+    {
+        public string StartValue { get; set; } = string.Empty;
+        public string EndValue { get; set; } = string.Empty;
+        public string CurrentValue { get; set; } = string.Empty;
+
+        public DeviceStatusWithInvoiceRange() { }
+
+        public DeviceStatusWithInvoiceRange(DeviceStatus status) : base()
+        {
+            Ok = status.Ok;
+            Messages = status.Messages;
+        }
+    }
 }

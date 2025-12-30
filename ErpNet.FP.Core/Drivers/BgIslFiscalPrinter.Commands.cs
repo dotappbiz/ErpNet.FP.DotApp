@@ -25,7 +25,12 @@
             CommandPrintLastReceiptDuplicate = 0x6D,
             CommandSubtotal = 0x33,
             CommandReadLastReceiptQRCodeData = 0x74,
+            CommandGetInvoiceRange = 0x42,
             CommandToPinpad = 0x37;
+            
+            // 066_info_Get_InvoiceRange
+            
+
 
         // Error for payment with pinpad when transaction may be successful in pinpad, but unsuccessful in fiscal device
         protected const string DatecsPinpadErrorUnfinishedTransaction = "-111560";

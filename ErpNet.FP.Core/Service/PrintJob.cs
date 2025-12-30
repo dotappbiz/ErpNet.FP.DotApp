@@ -15,7 +15,8 @@
         ZReport,
         SetDateTime,
         Duplicate,
-        Reset
+        Reset,
+        InvoiceRange
     }
 
     public delegate object Run(object document);
@@ -162,6 +163,10 @@
                     case PrintJobAction.Reset:
                         Result = Printer.Reset((Credentials)(Document ?? new Credentials()));
                         break;
+                    case PrintJobAction.InvoiceRange:
+                        Result = Printer.GetInvoiceRange();
+                        break;
+                                        
                     default:
                         break;
                 }

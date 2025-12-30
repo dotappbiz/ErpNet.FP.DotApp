@@ -323,5 +323,12 @@
 
         public void SetDeadLine(DateTime deadLine) => DeadLine = deadLine;
         public DateTime DeadLine { get; private set; } = DateTime.MaxValue;
+
+        public virtual DeviceStatusWithInvoiceRange GetInvoiceRange()
+        {
+            var st = new DeviceStatus();
+            st.AddError("E406", "NOT_SUPPORTED"); // или E409, както предпочиташ
+            return new DeviceStatusWithInvoiceRange(st);
+        }
     }
 }

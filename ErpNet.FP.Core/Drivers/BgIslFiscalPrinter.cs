@@ -64,6 +64,65 @@
             return status;
         }
 
+        // public override DeviceStatusWithInvoiceRange GetInvoiceRange()
+        // {
+        //     var (response, status) = Request(CommandGetInvoiceRange);
+
+        //     var result = new DeviceStatusWithInvoiceRange(status);
+        //     if (!status.Ok)
+        //         return result;
+
+        //     // ISL отговорът обикновено е полета, разделени с разделител (в този проект най-често ';')
+        //     // Очакваме: Start;End;Current
+        //     var parts = (response ?? string.Empty)
+        //         .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        //     if (parts.Length >= 3)
+        //     {
+        //         result.StartValue = parts[0];
+        //         result.EndValue = parts[1];
+        //         result.CurrentValue = parts[2];
+        //         return result;
+        //     }
+
+        //     // fallback ако форматът е различен – връщаме error-like статус, но без exception
+        //     result.AddError("E409", "UNEXPECTED_RESPONSE_FORMAT");
+        //     if (!string.IsNullOrWhiteSpace(response))
+        //         result.AddInfo(response);
+
+        //     return result;
+        // }
+
+        public override DeviceStatusWithInvoiceRange GetInvoiceRange()
+        {
+            var (response, status) = Request(CommandGetInvoiceRange);
+
+            var result = new DeviceStatusWithInvoiceRange(status);
+            if (!status.Ok)
+                return result;
+
+            var raw = (response ?? string.Empty).Trim();
+
+            // Datecs/ISL в твоя случай връща: Start,End,Current
+            // Някои модели/фърмуери може да върнат със ';' -> позволяваме и двата варианта.
+            var parts = raw.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            if (parts.Length >= 3)
+            {
+                result.StartValue = parts[0];
+                result.EndValue = parts[1];
+                result.CurrentValue = parts[2];
+                return result;
+            }
+
+            result.AddError("E409", "UNEXPECTED_RESPONSE_FORMAT");
+            if (!string.IsNullOrWhiteSpace(response))
+                result.AddInfo(response);
+
+            return result;
+        }
+
+
         public override string GetTaxGroupText(TaxGroup taxGroup)
         {
             return taxGroup switch
