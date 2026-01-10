@@ -53,7 +53,7 @@
                 : receipt.OperatorPassword;
 
             var till = string.IsNullOrWhiteSpace(opt.TillNumber) ? "1" : opt.TillNumber!;
-            var unp = string.IsNullOrWhiteSpace(opt.UNP) ? receipt.UniqueSaleNumber : opt.UNP!;
+            var unp = string.IsNullOrWhiteSpace(opt.Unp) ? receipt.UniqueSaleNumber : opt.Unp!;
 
             var header = string.Join(",",
                 new string[]

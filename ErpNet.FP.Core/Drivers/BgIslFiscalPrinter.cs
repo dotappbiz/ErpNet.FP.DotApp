@@ -372,6 +372,39 @@
             return (receiptInfo, deviceStatus);
         }
 
+        // public override (ReceiptInfo, DeviceStatus) PrintReceipt(Receipt receipt)
+        // {
+        //     var receiptInfo = new ReceiptInfo();
+
+        //     // Abort all unfinished or erroneus receipts
+        //     AbortReceipt();
+
+        //     // Opening receipt
+        //     // var (_, deviceStatus) = OpenReceipt(
+        //     //     receipt.UniqueSaleNumber,
+        //     //     receipt.Operator,
+        //     //     receipt.OperatorPassword
+        //     // );
+        //     var (_, deviceStatus) = OpenReceipt(receipt);
+
+        //     if (!deviceStatus.Ok)
+        //     {
+        //         AbortReceipt();
+        //         deviceStatus.AddInfo($"Error occured while opening new fiscal receipt");
+        //         return (receiptInfo, deviceStatus);
+        //     }
+
+        //     // Printing receipt's body
+        //     (receiptInfo, deviceStatus) = PrintReceiptBody(receipt);
+        //     if (!deviceStatus.Ok)
+        //     {
+        //         AbortReceipt();
+        //         deviceStatus.AddInfo($"Error occured while printing receipt items");
+        //     }
+
+        //     return (receiptInfo, deviceStatus);
+        // }
+
         public override (ReceiptInfo, DeviceStatus) PrintReceipt(Receipt receipt)
         {
             var receiptInfo = new ReceiptInfo();
@@ -379,13 +412,36 @@
             // Abort all unfinished or erroneus receipts
             AbortReceipt();
 
-            // Opening receipt
-            // var (_, deviceStatus) = OpenReceipt(
-            //     receipt.UniqueSaleNumber,
-            //     receipt.Operator,
-            //     receipt.OperatorPassword
-            // );
-            var (_, deviceStatus) = OpenReceipt(receipt);
+            var isInvoice = receipt.ReceiptOptions?.IsInvoice == true;
+            var isStornoInvoice = isInvoice && receipt.ReceiptOptions?.Storno != null;
+
+            string openResponse;
+            DeviceStatus deviceStatus;
+
+            if (isStornoInvoice)
+            {
+                var storno = receipt.ReceiptOptions!.Storno!;
+
+                // минимално: да има оригинален номер на фактура (ако ще печатаме "I" + InvNum)
+                if (string.IsNullOrWhiteSpace(storno.OriginalInvoiceNumber))
+                {
+                    deviceStatus = new DeviceStatus();
+                    deviceStatus.AddError("E403", "OriginalInvoiceNumber is required for storno invoice.");
+                    AbortReceipt(); // защитно, за консистентност
+                    return (receiptInfo, deviceStatus);
+                }
+                (openResponse, deviceStatus) = OpenStornoInvoiceReceipt(
+                    storno,
+                    receipt.UniqueSaleNumber,
+                    receipt.Operator,
+                    receipt.OperatorPassword,
+                    receipt.ReceiptOptions?.TillNumber
+                );
+            }
+            else
+            {
+                (openResponse, deviceStatus) = OpenReceipt(receipt);
+            }
 
             if (!deviceStatus.Ok)
             {

@@ -26,6 +26,7 @@
             CommandSubtotal = 0x33,
             CommandReadLastReceiptQRCodeData = 0x74,
             CommandGetInvoiceRange = 0x42,
+            CommandOpenStornoReceipt = 0x2E,
             CommandToPinpad = 0x37;
             
             // 066_info_Get_InvoiceRange
@@ -44,6 +45,115 @@
         protected const string DatecsXPinpadReportFromPinpad = "6\t";
 
         protected const byte CommandPrintCustomerInformation = 0x39; // 57 dec
+
+        // dotapp >>
+        protected virtual char GetStornoTypeLetter(ReversalReason reason)
+        {
+            return reason switch
+            {
+                ReversalReason.OperatorError => 'E',
+                ReversalReason.Refund => 'R',
+                ReversalReason.TaxBaseReduction => 'T',
+                _ => 'E'
+            };
+        }
+
+        protected static string FormatStornoDateTime(DateTime dt) => dt.ToString("ddMMyyHHmmss", CultureInfo.InvariantCulture);
+
+
+
+public virtual (string, DeviceStatus) OpenStornoInvoiceReceipt(
+    StornoOptions storno,
+    string uniqueSaleNumber,
+    string operatorId,
+    string operatorPassword,
+    string? tillNumber)
+{
+    var op = string.IsNullOrWhiteSpace(operatorId)
+        ? Options.ValueOrDefault("Administrator.ID", "20")
+        : operatorId;
+
+    var pwd = string.IsNullOrWhiteSpace(operatorPassword)
+        ? Options.ValueOrDefault("Administrator.Password", "9999")
+            .WithMaxLength(Info.OperatorPasswordMaxLength)
+        : operatorPassword;
+
+    var till = string.IsNullOrWhiteSpace(tillNumber)
+        ? Options.ValueOrDefault("Till.Number", "1")
+        : tillNumber;
+
+    // За 2E трябва да имаме DocNo (в частта <StType><DocNo>)
+    if (string.IsNullOrWhiteSpace(storno.OriginalDocNo))
+    {
+        var st = new DeviceStatus();
+        st.AddError("E403", "OriginalDocNo is required for storno invoice (2E).");
+        return ("", st);
+    }
+
+    // За "Invoice storno" трябва да имаме и номер на оригиналната фактура (I<InvNum>)
+    if (string.IsNullOrWhiteSpace(storno.OriginalInvoiceNumber))
+    {
+        var st = new DeviceStatus();
+        st.AddError("E403", "OriginalInvoiceNumber is required for storno invoice (2E).");
+        return ("", st);
+    }
+
+    // Полета
+    var invNum = storno.OriginalInvoiceNumber.Trim();
+    var docNo = storno.OriginalDocNo.Trim();
+    var stType = GetStornoTypeLetter(storno.Reason); // E/R/T
+
+    // ddMMyyHHmmss (според протокола)
+    var stDT = storno.OriginalDateTime.HasValue
+        ? storno.OriginalDateTime.Value.ToString("ddMMyyHHmmss", CultureInfo.InvariantCulture)
+        : string.Empty;
+
+    var stUnp = (storno.OriginalUNP ?? string.Empty).Trim();
+    var stFmin = (storno.OriginalFMNumber ?? string.Empty).Trim();
+    var reasonText = (storno.ReasonText ?? string.Empty).Trim().WithMaxLength(30);
+
+    // 2E payload (по спецификация):
+    // <OpNum>,<Password>,<TillNum>/<Invoice><InvNum>//,<UNP>/,<StType><DocNo>,<StUNP>,<StDT>,<StFMIN>//#<StornoReason>
+    var sb = new StringBuilder()
+        .Append(op).Append(',')
+        .Append(pwd).Append(',')
+        .Append(till)
+        .Append('/')                       // <-- важен разделител
+        .Append('I').Append(invNum)
+        .Append("//,")                     // <-- важен шаблон
+        .Append(uniqueSaleNumber)          // UNP на новия сторно документ
+        .Append("/,")                      // <-- важен шаблон
+        .Append(stType).Append(docNo);
+
+    // В протокола тези полета са част от формата; ако ги нямаш, по-добре НЕ пращай празни запетаи.
+    if (!string.IsNullOrWhiteSpace(stUnp) &&
+        !string.IsNullOrWhiteSpace(stDT) &&
+        !string.IsNullOrWhiteSpace(stFmin))
+    {
+        sb.Append(',')
+          .Append(stUnp).Append(',')
+          .Append(stDT).Append(',')
+          .Append(stFmin);
+    }
+
+    if (!string.IsNullOrWhiteSpace(reasonText))
+    {
+        sb.Append("//#").Append(reasonText);   // <-- точно //# (не само #)
+    }
+
+    var payload = sb.ToString();
+    Console.WriteLine($"[DOTAPP] 2E payload => {payload}");
+
+    return Request(CommandOpenStornoReceipt, payload);
+}
+
+
+
+
+
+
+
+        // dotapp <<
 
         public virtual (string, DeviceStatus) PrintCustomerInformation(ErpNet.FP.Core.ClientInfo info)
         {
