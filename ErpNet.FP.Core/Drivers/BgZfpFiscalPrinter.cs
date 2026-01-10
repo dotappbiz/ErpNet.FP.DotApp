@@ -220,13 +220,21 @@
             // Abort all unfinished or erroneus receipts
             AbortReceipt();
 
+            // Избор на параметри според типа сторно (фактура или касов бон)
+            var isInvoiceReversal = !string.IsNullOrEmpty(reversalReceipt.InvoiceNumber);
+
+            string receiptNumber = isInvoiceReversal ? reversalReceipt.InvoiceNumber : reversalReceipt.ReceiptNumber;
+            System.DateTime receiptDateTime = isInvoiceReversal && reversalReceipt.InvoiceDateTime.HasValue ? reversalReceipt.InvoiceDateTime.Value : reversalReceipt.ReceiptDateTime;
+            string fiscalMemorySerialNumber = isInvoiceReversal ? reversalReceipt.InvoiceFiscalMemorySerialNumber : reversalReceipt.FiscalMemorySerialNumber;
+            string uniqueSaleNumber = isInvoiceReversal ? reversalReceipt.InvoiceUniqueSaleNumber : reversalReceipt.UniqueSaleNumber;
+
             // Receipt header
             var (_, deviceStatus) = OpenReversalReceipt(
                 reversalReceipt.Reason,
-                reversalReceipt.ReceiptNumber,
-                reversalReceipt.ReceiptDateTime,
-                reversalReceipt.FiscalMemorySerialNumber,
-                reversalReceipt.UniqueSaleNumber,
+                receiptNumber,
+                receiptDateTime,
+                fiscalMemorySerialNumber,
+                uniqueSaleNumber,
                 reversalReceipt.Operator,
                 reversalReceipt.OperatorPassword);
             if (!deviceStatus.Ok)

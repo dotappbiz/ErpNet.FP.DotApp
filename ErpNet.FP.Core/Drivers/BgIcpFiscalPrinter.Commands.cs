@@ -254,17 +254,64 @@
             string fiscalMemorySerialNumber,
             string uniqueSaleNumber,
             string operatorId,
-            string operatorPassword)
+            string operatorPassword,
+            string invoiceNumber = "",
+            System.DateTime? invoiceDateTime = null,
+            string invoiceFiscalMemorySerialNumber = "",
+            string invoiceUniqueSaleNumber = "")
         {
-            var reversalReceiptData = new StringBuilder()
-                .Append("20")
-                .Append(GetReversalReasonText(reason))
-                .Append("0000")
-                .Append(receiptNumber)
-                .Append(receiptDateTime.ToString("ddMMyyyyHHmmss", CultureInfo.InvariantCulture))
-                .Append(fiscalMemorySerialNumber)
-                .Append(uniqueSaleNumber);
-            return Request(reversalReceiptData.ToString());
+            // NAV logic for command selection
+            if (!string.IsNullOrEmpty(invoiceNumber))
+            {
+                // Determine command name based on presence of fields (NAV logic)
+                bool hasStornoFM = !string.IsNullOrEmpty(invoiceFiscalMemorySerialNumber);
+                bool hasUNP = false; // UNP not used in current model
+                bool hasInvoice = !string.IsNullOrEmpty(invoiceNumber);
+                string cmd = "046_receipt_StornoOpen_A11";
+                if (!hasStornoFM && !hasUNP) cmd = "046_receipt_StornoOpen_A11";
+                else if (!hasStornoFM && hasUNP) cmd = "046_receipt_StornoOpen_A12";
+                else if (hasStornoFM && !hasUNP) cmd = "046_receipt_StornoOpen_A15";
+                else if (hasStornoFM && hasUNP) cmd = "046_receipt_StornoOpen_A16";
+
+                var parameters = new List<string>();
+                parameters.Add(cmd);
+                parameters.Add(operatorId); // OperatorNumber
+                parameters.Add(operatorPassword); // OperatorPassword
+                parameters.Add("1"); // TillNumber (default)
+                parameters.Add(reason == ReversalReason.Refund ? "R" : "E"); // Storno_Type
+                parameters.Add(receiptNumber); // Storno_DocumentNumber
+                parameters.Add(""); // Storno_Reason (not used)
+                parameters.Add(""); // UNP (not used)
+                parameters.Add(""); // Storno_UNP (not used)
+                parameters.Add(invoiceDateTime.HasValue ? invoiceDateTime.Value.ToString("ddMMyyyyHHmmss", CultureInfo.InvariantCulture) : ""); // Storno_DateTime
+                parameters.Add(invoiceFiscalMemorySerialNumber); // Storno_FMNumber
+                parameters.Add(invoiceNumber); // Invoice
+                parameters.Add(invoiceUniqueSaleNumber); // InvoiceNumber
+
+                // Remove trailing empty parameters for device compatibility
+                for (int i = parameters.Count - 1; i >= 0; i--)
+                {
+                    if (string.IsNullOrEmpty(parameters[i]))
+                        parameters.RemoveAt(i);
+                    else
+                        break;
+                }
+
+                var data = string.Join(";", parameters);
+                return Request(data);
+            }
+            else
+            {
+                var reversalReceiptData = new StringBuilder()
+                    .Append("20")
+                    .Append(GetReversalReasonText(reason))
+                    .Append("0000")
+                    .Append(receiptNumber)
+                    .Append(receiptDateTime.ToString("ddMMyyyyHHmmss", CultureInfo.InvariantCulture))
+                    .Append(fiscalMemorySerialNumber)
+                    .Append(uniqueSaleNumber);
+                return Request(reversalReceiptData.ToString());
+            }
         }
 
         public virtual (string, DeviceStatus) PrintDailyReport(bool zeroing = true)

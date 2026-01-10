@@ -29,6 +29,12 @@
         public System.DateTime ReceiptDateTime { get; set; }
         public string FiscalMemorySerialNumber { get; set; } = string.Empty;
 
+        // Invoice-specific properties for reversal
+        public string InvoiceNumber { get; set; } = string.Empty;
+        public string InvoiceUniqueSaleNumber { get; set; } = string.Empty;
+        public System.DateTime? InvoiceDateTime { get; set; }
+        public string InvoiceFiscalMemorySerialNumber { get; set; } = string.Empty;
+
         [JsonConverter(typeof(StringEnumConverter))]
         public ReversalReason Reason { get; set; } = ReversalReason.OperatorError;
 

@@ -294,15 +294,33 @@
                 status.AddWarning("W302", "Reversal receipt payments array should be empty. It will be ignored.");
                 reversalReceipt.Payments.Clear();
             }
-            if (String.IsNullOrEmpty(reversalReceipt.ReceiptNumber))
+
+            bool isInvoiceReversal = !string.IsNullOrEmpty(reversalReceipt.InvoiceNumber);
+            if (isInvoiceReversal)
             {
-                status.AddError("E405", $"ReceiptNumber of the original receipt is empty");
-                return status;
+                if (String.IsNullOrEmpty(reversalReceipt.InvoiceFiscalMemorySerialNumber))
+                {
+                    status.AddError("E405", $"InvoiceFiscalMemorySerialNumber of the original invoice is empty");
+                    return status;
+                }
+                if (String.IsNullOrEmpty(reversalReceipt.InvoiceUniqueSaleNumber))
+                {
+                    status.AddError("E405", $"InvoiceUniqueSaleNumber of the original invoice is empty");
+                    return status;
+                }
             }
-            if (String.IsNullOrEmpty(reversalReceipt.FiscalMemorySerialNumber))
+            else
             {
-                status.AddError("E405", $"FiscalMemorySerialNumber of the original receipt is empty");
-                return status;
+                if (String.IsNullOrEmpty(reversalReceipt.ReceiptNumber))
+                {
+                    status.AddError("E405", $"ReceiptNumber of the original receipt is empty");
+                    return status;
+                }
+                if (String.IsNullOrEmpty(reversalReceipt.FiscalMemorySerialNumber))
+                {
+                    status.AddError("E405", $"FiscalMemorySerialNumber of the original receipt is empty");
+                    return status;
+                }
             }
             return status;
         }
