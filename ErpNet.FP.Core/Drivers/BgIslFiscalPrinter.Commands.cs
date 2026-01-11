@@ -62,8 +62,6 @@
 
 
 
-
-
 public virtual (string, DeviceStatus) OpenStornoInvoiceReceipt(
     StornoOptions storno,
     string uniqueSaleNumber,
@@ -71,89 +69,82 @@ public virtual (string, DeviceStatus) OpenStornoInvoiceReceipt(
     string operatorPassword,
     string? tillNumber)
 {
-    Console.WriteLine("[DOTAPP] OpenStornoInvoiceReceipt() ENTERED");
-
-    var op = string.IsNullOrWhiteSpace(operatorId)
+    var op = string.IsNullOrEmpty(operatorId)
         ? Options.ValueOrDefault("Administrator.ID", "20")
-        : operatorId.Trim();
+        : operatorId;
 
-    var pwd = string.IsNullOrWhiteSpace(operatorPassword)
-        ? Options.ValueOrDefault("Administrator.Password", "9999")
-            .WithMaxLength(Info.OperatorPasswordMaxLength)
-        : operatorPassword.Trim();
+    var pwd = string.IsNullOrEmpty(operatorPassword)
+        ? Options.ValueOrDefault("Administrator.Password", "9999").WithMaxLength(Info.OperatorPasswordMaxLength)
+        : operatorPassword;
 
     var till = string.IsNullOrWhiteSpace(tillNumber)
         ? Options.ValueOrDefault("Till.Number", "1")
-        : tillNumber.Trim();
+        : tillNumber;
 
-    var invNum = (storno.OriginalInvoiceNumber ?? string.Empty).Trim();
-    if (string.IsNullOrWhiteSpace(invNum))
-    {
-        var st = new DeviceStatus();
-        st.AddError("E403", "OriginalInvoiceNumber (InvNum) is required for storno invoice (2E).");
-        return ("", st);
-    }
-
-    var docNo = (storno.OriginalDocNo ?? string.Empty).Trim();
-    if (string.IsNullOrWhiteSpace(docNo))
+    // DocNo is REQUIRED for 2E storno invoice (StType + DocNo after '/')
+    if (string.IsNullOrWhiteSpace(storno.OriginalDocNo))
     {
         var st = new DeviceStatus();
         st.AddError("E403", "OriginalDocNo is required for storno invoice (2E).");
         return ("", st);
     }
 
-    if (string.IsNullOrWhiteSpace(uniqueSaleNumber))
-    {
-        var st = new DeviceStatus();
-        st.AddError("E403", "uniqueSaleNumber (UNP) is required for storno invoice (2E).");
-        return ("", st);
-    }
+    var invNum = (storno.OriginalInvoiceNumber ?? "").Trim();   // InvNum
+    var docNo  = storno.OriginalDocNo.Trim();                   // DocNo (global doc/receipt no)
 
     var stType = GetStornoTypeLetter(storno.Reason); // E/R/T
 
     // ddMMyyHHmmss
     var stDT = storno.OriginalDateTime.HasValue
         ? storno.OriginalDateTime.Value.ToString("ddMMyyHHmmss", CultureInfo.InvariantCulture)
-        : string.Empty;
+        : "";
 
     var sb = new StringBuilder();
 
-    // <OpNum>,<Password>,<TillNum>/
+    // OpCode,OpPwd,TillNmb
     sb.Append(op).Append(',')
       .Append(pwd).Append(',')
-      .Append(till).Append('/');
+      .Append(till);
 
-    // ,I<InvNum>
-    sb.Append(",I").Append(invNum);
+    // [,I<InvNum>]
+    if (!string.IsNullOrWhiteSpace(invNum))
+        sb.Append(",I").Append(invNum);
 
-    // //,<UNP>/
-    sb.Append("//,").Append(uniqueSaleNumber.Trim()).Append('/');
+    // [,<UNP>]  (NEW UNP of the storno document)
+    if (!string.IsNullOrWhiteSpace(uniqueSaleNumber))
+        sb.Append(',').Append(uniqueSaleNumber);
 
-    // ,<StType><DocNo>
-    sb.Append(',').Append(stType).Append(docNo);
+    // '/' separator EXACTLY ONCE, then <StType><DocNo> (NO comma after '/')
+    sb.Append('/')
+      .Append(stType)
+      .Append(docNo);
 
-    // [,<StUNP>,<StDT>,<StFMIN>]
-    // добавяме само ако имаме и трите
-    if (!string.IsNullOrWhiteSpace(storno.OriginalUNP)
-        && !string.IsNullOrWhiteSpace(stDT)
-        && !string.IsNullOrWhiteSpace(storno.OriginalFMNumber))
+    // Optional: ,<StUNP>,<StDT>,<StFMIN> (all-or-nothing)
+    var hasTriplet =
+        !string.IsNullOrWhiteSpace(storno.OriginalUNP) &&
+        !string.IsNullOrWhiteSpace(stDT) &&
+        !string.IsNullOrWhiteSpace(storno.OriginalFMNumber);
+
+    if (hasTriplet)
     {
-        sb.Append(',').Append(storno.OriginalUNP.Trim())
-          .Append(',').Append(stDT)
-          .Append(',').Append(storno.OriginalFMNumber.Trim());
+        sb.Append(',')
+          .Append(storno.OriginalUNP).Append(',')
+          .Append(stDT).Append(',')
+          .Append(storno.OriginalFMNumber);
     }
 
-    // //[#<StornoReason>]
-    sb.Append("//");
+    // Optional: #<StornoReason>
     if (!string.IsNullOrWhiteSpace(storno.ReasonText))
-        sb.Append('#').Append(storno.ReasonText.Trim().WithMaxLength(30));
+        sb.Append('#').Append(storno.ReasonText.WithMaxLength(30));
 
     var payload = sb.ToString();
 
+    System.Diagnostics.Debug.WriteLine($"[DOTAPP] 2E payload => {payload}");
     Console.WriteLine($"[DOTAPP] 2E payload => {payload}");
 
     return Request(CommandOpenStornoReceipt, payload);
 }
+
 
 
 
