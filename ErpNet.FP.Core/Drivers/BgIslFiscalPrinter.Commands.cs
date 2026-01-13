@@ -69,19 +69,47 @@ public virtual (string, DeviceStatus) OpenStornoInvoiceReceipt(
     string operatorPassword,
     string? tillNumber)
 {
+    // =====================================================================
+    // HARD-CODED TEST SWITCH (за да докажем, че 2E може да мине изобщо)
+    // =====================================================================
+    const bool USE_HARDCODED_TEST_PAYLOAD = false;
+    if (USE_HARDCODED_TEST_PAYLOAD)
+    {
+        // Формат 2E:
+        // Op,Pwd,Till/ , I<InvNum>// , <UNP>/ , <StType><DocNo>/ , <StUNP>,<StDT>,<StFMIN>/#Reason
+        var hardcoded =
+            "20,9999,1/," +
+            "I0054//," +
+            "DT511780-4444-0080001/," +
+            "R0001000/," +
+            "DT511780-4444-0080000,100126225003,02978964/#refund";
+
+        System.Diagnostics.Debug.WriteLine($"[DOTAPP] 2E HARDCODED payload => {hardcoded}");
+        Console.WriteLine($"[DOTAPP] 2E HARDCODED payload => {hardcoded}");
+
+        return Request(CommandOpenStornoReceipt, hardcoded);
+    }
+
+    // =====================================================================
+    // NORMAL (динамично) построяване по протокола
+    // =====================================================================
+
+    System.Diagnostics.Debug.WriteLine("[DOTAPP] OpenStornoInvoiceReceipt() ENTERED");
+    Console.WriteLine("[DOTAPP] OpenStornoInvoiceReceipt() ENTERED");
+
     var op = string.IsNullOrEmpty(operatorId)
         ? Options.ValueOrDefault("Administrator.ID", "20")
         : operatorId;
 
     var pwd = string.IsNullOrEmpty(operatorPassword)
         ? Options.ValueOrDefault("Administrator.Password", "9999").WithMaxLength(Info.OperatorPasswordMaxLength)
-        : operatorPassword;
+        : operatorPassword.WithMaxLength(Info.OperatorPasswordMaxLength);
 
     var till = string.IsNullOrWhiteSpace(tillNumber)
         ? Options.ValueOrDefault("Till.Number", "1")
-        : tillNumber;
+        : tillNumber.Trim();
 
-    // DocNo is REQUIRED for 2E storno invoice (StType + DocNo after '/')
+    // DocNo is REQUIRED (2E format has <StType><DocNo>)
     if (string.IsNullOrWhiteSpace(storno.OriginalDocNo))
     {
         var st = new DeviceStatus();
@@ -89,61 +117,193 @@ public virtual (string, DeviceStatus) OpenStornoInvoiceReceipt(
         return ("", st);
     }
 
-    var invNum = (storno.OriginalInvoiceNumber ?? "").Trim();   // InvNum
-    var docNo  = storno.OriginalDocNo.Trim();                   // DocNo (global doc/receipt no)
+    // 1) Invoice number (InvNum) – по протокол е 4 цифри.
+    // От твоето: "0000000054" -> "0054"
+    string NormalizeInvNum(string? inv)
+    {
+        var s = (inv ?? "").Trim();
+        if (string.IsNullOrEmpty(s))
+            return "";
 
+        // Вземи само цифрите (ако има други символи)
+        var digits = new string(s.Where(char.IsDigit).ToArray());
+        if (string.IsNullOrEmpty(digits))
+            return "";
+
+        // ПО ПРОТОКОЛ: 4 цифри → взимаме последните 4
+        if (digits.Length > 4)
+            digits = digits.Substring(digits.Length - 4);
+
+        return digits.PadLeft(4, '0');
+    }
+
+    var invNum = NormalizeInvNum(storno.OriginalInvoiceNumber);
+
+    // 2) UNP на новия сторно документ (протокол: <UNP>)
+    // В твоя API това е receipt.UniqueSaleNumber / uniqueSaleNumber.
+    var unpNew = (uniqueSaleNumber ?? "").Trim();
+
+    // 3) Storno type letter: E/R/T
     var stType = GetStornoTypeLetter(storno.Reason); // E/R/T
 
-    // ddMMyyHHmmss
+    // 4) DocNo (глобален документ, който сторнираш) – протокол казва до 11 символа.
+    string Cut(string s, int max) => s.Length <= max ? s : s.Substring(0, max);
+    var docNo = Cut(storno.OriginalDocNo.Trim(), 11);
+
+    // 5) Original date/time: DDMMYYhhmmss
     var stDT = storno.OriginalDateTime.HasValue
         ? storno.OriginalDateTime.Value.ToString("ddMMyyHHmmss", CultureInfo.InvariantCulture)
         : "";
 
-    var sb = new StringBuilder();
-
-    // OpCode,OpPwd,TillNmb
-    sb.Append(op).Append(',')
-      .Append(pwd).Append(',')
-      .Append(till);
-
-    // [,I<InvNum>]
-    if (!string.IsNullOrWhiteSpace(invNum))
-        sb.Append(",I").Append(invNum);
-
-    // [,<UNP>]  (NEW UNP of the storno document)
-    if (!string.IsNullOrWhiteSpace(uniqueSaleNumber))
-        sb.Append(',').Append(uniqueSaleNumber);
-
-    // '/' separator EXACTLY ONCE, then <StType><DocNo> (NO comma after '/')
-    sb.Append('/')
-      .Append(stType)
-      .Append(docNo);
-
-    // Optional: ,<StUNP>,<StDT>,<StFMIN> (all-or-nothing)
-    var hasTriplet =
+    // 6) Optional block StUNP, StDT, StFMIN се подава като 3 последователни параметъра
+    var hasOrigTriple =
         !string.IsNullOrWhiteSpace(storno.OriginalUNP) &&
         !string.IsNullOrWhiteSpace(stDT) &&
         !string.IsNullOrWhiteSpace(storno.OriginalFMNumber);
 
-    if (hasTriplet)
+    var sb = new StringBuilder();
+
+    // <OpNum>,<Password>,<TillNum>
+    sb.Append(op).Append(',')
+      .Append(pwd).Append(',')
+      .Append(till);
+
+    // "/,"  (важно: точно така)
+    sb.Append("/,");
+
+    // <Invoice><InvNum>//  (Invoice='I' само ако имаме invNum)
+    if (!string.IsNullOrWhiteSpace(invNum))
+        sb.Append('I').Append(invNum);
+
+    // Важно: винаги има "//" след invoice-part-а
+    sb.Append("//,");
+
+    // <UNP>  (ако е празен – пак ще има празен параметър, но структурата остава валидна)
+    if (!string.IsNullOrWhiteSpace(unpNew))
+        sb.Append(unpNew);
+
+    // "/,"  (край на UNP секцията)
+    sb.Append("/,");
+
+    // <StType><DocNo>/   (важно: DocNo завършва със '/')
+    sb.Append(stType).Append(docNo).Append('/');
+
+    // [,<StUNP>,<StDT>,<StFMIN>]
+    if (hasOrigTriple)
     {
         sb.Append(',')
-          .Append(storno.OriginalUNP).Append(',')
-          .Append(stDT).Append(',')
-          .Append(storno.OriginalFMNumber);
+          .Append(storno.OriginalUNP!.Trim())
+          .Append(',')
+          .Append(stDT)
+          .Append(',')
+          .Append(storno.OriginalFMNumber!.Trim());
     }
 
-    // Optional: #<StornoReason>
+    // [/#Reason] или [#Reason] – по-стабилно е "/#"
     if (!string.IsNullOrWhiteSpace(storno.ReasonText))
-        sb.Append('#').Append(storno.ReasonText.WithMaxLength(30));
+    {
+        sb.Append("/#")
+          .Append(storno.ReasonText.WithMaxLength(30));
+    }
 
     var payload = sb.ToString();
 
+    // Debug
     System.Diagnostics.Debug.WriteLine($"[DOTAPP] 2E payload => {payload}");
     Console.WriteLine($"[DOTAPP] 2E payload => {payload}");
 
+    // Ако искаш и HEX:
+    // var bytes = Encoding.ASCII.GetBytes(payload);
+    // System.Diagnostics.Debug.WriteLine("[DOTAPP] 2E payload bytes (ASCII HEX) => " + BitConverter.ToString(bytes));
+
     return Request(CommandOpenStornoReceipt, payload);
 }
+
+
+
+// public virtual (string, DeviceStatus) OpenStornoInvoiceReceipt(
+//     StornoOptions storno,
+//     string uniqueSaleNumber,
+//     string operatorId,
+//     string operatorPassword,
+//     string? tillNumber)
+// {
+//     Console.WriteLine("[DOTAPP] OpenStornoInvoiceReceipt() ENTERED");
+
+//     var op = string.IsNullOrEmpty(operatorId)
+//         ? Options.ValueOrDefault("Administrator.ID", "20")
+//         : operatorId;
+
+//     var pwd = string.IsNullOrEmpty(operatorPassword)
+//         ? Options.ValueOrDefault("Administrator.Password", "9999").WithMaxLength(Info.OperatorPasswordMaxLength)
+//         : operatorPassword;
+
+//     var till = string.IsNullOrWhiteSpace(tillNumber)
+//         ? Options.ValueOrDefault("Till.Number", "1")
+//         : tillNumber;
+
+//     // По 2E: DocNo е задължителен (<StType><DocNo>)
+//     if (string.IsNullOrWhiteSpace(storno.OriginalDocNo))
+//     {
+//         var st = new DeviceStatus();
+//         st.AddError("E403", "OriginalDocNo is required for storno (2E).");
+//         return ("", st);
+//     }
+
+//     var invNum = (storno.OriginalInvoiceNumber ?? "").Trim(); // InvNum (invoice number)
+//     var docNo = storno.OriginalDocNo.Trim();                  // DocNo (global doc no)
+
+//     var stType = GetStornoTypeLetter(storno.Reason); // E/R/T
+
+//     // 2E изисква: DDMMYYhhmmss
+//     var stDT = storno.OriginalDateTime.HasValue
+//         ? storno.OriginalDateTime.Value.ToString("ddMMyyHHmmss", CultureInfo.InvariantCulture)
+//         : "";
+
+//     var sb = new StringBuilder();
+
+//     // <OpNum>,<Password>,<TillNum>/
+//     sb.Append(op).Append(',')
+//       .Append(pwd).Append(',')
+//       .Append(till)
+//       .Append('/'); // <-- ЗАДЪЛЖИТЕЛНО по протокол
+
+//     // [,<Invoice><InvNum>/]  (Invoice='I', InvNum=номер на фактурата)
+//     // Забележка: секцията започва директно с "I", НЕ с запетая
+//     if (!string.IsNullOrWhiteSpace(invNum))
+//         sb.Append('I').Append(invNum).Append('/');
+
+//     // [,<UNP>/]  (нов UNP на сторното)
+//     if (!string.IsNullOrWhiteSpace(uniqueSaleNumber))
+//         sb.Append(',').Append(uniqueSaleNumber).Append('/');
+
+//     // ,<StType><DocNo>
+//     sb.Append(',').Append(stType).Append(docNo);
+
+//     // [,<StUNP>,<StDT>,<StFMIN>]
+//     if (!string.IsNullOrWhiteSpace(storno.OriginalUNP)
+//         && !string.IsNullOrWhiteSpace(stDT)
+//         && !string.IsNullOrWhiteSpace(storno.OriginalFMNumber))
+//     {
+//         sb.Append(',').Append(storno.OriginalUNP)
+//           .Append(',').Append(stDT)
+//           .Append(',').Append(storno.OriginalFMNumber);
+//     }
+
+//     // /[#<StornoReason>]
+//     sb.Append('/'); // <-- ЗАДЪЛЖИТЕЛЕН разделител към секцията за причина
+//     if (!string.IsNullOrWhiteSpace(storno.ReasonText))
+//         sb.Append('#').Append(storno.ReasonText.WithMaxLength(30));
+
+//     // Лог
+//     var payload = sb.ToString();
+//     Console.WriteLine($"[DOTAPP] 2E payload => {payload}");
+
+//     // Ако искаш 1:1 тест с “идеалния” пример, временно можеш да хардкоднеш payload тук:
+//     // payload = "20,9999,1/I0000000054/,DT511780-4444-0080001/,R0001000,DT511780-4444-0080000,100126225003,02978964/#refund";
+
+//     return Request(CommandOpenStornoReceipt, payload);
+// }
 
 
 
